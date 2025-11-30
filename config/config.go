@@ -12,6 +12,8 @@ type Config struct {
 	TelegramChatID   string
 	NotificationTime string
 	Timezone         string
+	WebhookURL       string
+	Port             string
 }
 
 var AppConfig *Config
@@ -28,6 +30,8 @@ func LoadConfig() error {
 		TelegramChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 		NotificationTime: os.Getenv("NOTIFICATION_TIME"),
 		Timezone:         os.Getenv("TIMEZONE"),
+		WebhookURL:       os.Getenv("WEBHOOK_URL"),
+		Port:             os.Getenv("PORT"),
 	}
 
 	// Validar configuración requerida
@@ -41,6 +45,10 @@ func LoadConfig() error {
 
 	if AppConfig.Timezone == "" {
 		AppConfig.Timezone = "America/Argentina/Buenos_Aires"
+	}
+
+	if AppConfig.Port == "" {
+		AppConfig.Port = "8080"
 	}
 
 	return nil

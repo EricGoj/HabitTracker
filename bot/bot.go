@@ -1,9 +1,11 @@
 package bot
 
 import (
+	"encoding/json"
 	"fmt"
 	"habittracker/habits"
 	"log"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -33,7 +35,7 @@ func NewBot(token string, habitManager *habits.HabitManager) (*Bot, error) {
 // Start inicia el bot y comienza a escuchar mensajes
 func (b *Bot) Start() {
 	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
+	u.Timeout = 3600 // 1 hora de timeout para long polling
 
 	updates := b.api.GetUpdatesChan(u)
 
@@ -274,4 +276,86 @@ func (b *Bot) GetUserChatID() int64 {
 func (b *Bot) SetUserChatID(chatID int64) {
 	b.userChatID = chatID
 	log.Printf("User chat ID set manually: %d", chatID)
+}
+
+// SetWebhook configura el webhook de Telegram
+func (b *Bot) SetWebhook(webhookURL string) error {
+	webhookConfig, err := tgbotapi.NewWebhook(webhookURL)
+	if err != nil {
+		return fmt.Errorf("failed to create webhook config: %w", err)
+	}
+
+	_, err = b.api.Request(webhookConfig)
+	if err != nil {
+		return fmt.Errorf("failed to set webhook: %w", err)
+	}
+
+	info, err := b.api.GetWebhookInfo()
+	if err != nil {
+		return fmt.Errorf("failed to get webhook info: %w", err)
+	}
+
+	log.Printf("Webhook set successfully!")
+	log.Printf("URL: %s", info.URL)
+	log.Printf("Pending updates: %d", info.PendingUpdateCount)
+
+	return nil
+}
+
+// GetWebhookHandler retorna un http.Handler para procesar actualizaciones del webhook
+func (b *Bot) GetWebhookHandler() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		log.Println("📨 Webhook request received")
+		log.Printf("Method: %s | Path: %s", r.Method, r.URL.Path)
+		log.Printf("Remote Address: %s", r.RemoteAddr)
+
+		// Parsear el update de Telegram
+		var update tgbotapi.Update
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			log.Printf("❌ Error decoding update: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Log del update completo en JSON
+		updateJSON, _ := json.MarshalIndent(update, "", "  ")
+		log.Printf("📦 Full Update JSON:\n%s", string(updateJSON))
+
+		// Log de información específica
+		log.Printf("Update ID: %d", update.UpdateID)
+
+		if update.Message != nil {
+			log.Printf("📩 Message received:")
+			log.Printf("  From: %s (@%s) [ID: %d]",
+				update.Message.From.FirstName,
+				update.Message.From.UserName,
+				update.Message.From.ID)
+			log.Printf("  Chat ID: %d", update.Message.Chat.ID)
+			log.Printf("  Text: %s", update.Message.Text)
+			if update.Message.IsCommand() {
+				log.Printf("  Command: /%s", update.Message.Command())
+			}
+		}
+
+		if update.CallbackQuery != nil {
+			log.Printf("🔘 Callback Query received:")
+			log.Printf("  From: %s (@%s) [ID: %d]",
+				update.CallbackQuery.From.FirstName,
+				update.CallbackQuery.From.UserName,
+				update.CallbackQuery.From.ID)
+			log.Printf("  Data: %s", update.CallbackQuery.Data)
+		}
+
+		// Procesar el update
+		if update.Message != nil {
+			b.handleMessage(update.Message)
+		} else if update.CallbackQuery != nil {
+			b.handleCallback(update.CallbackQuery)
+		}
+
+		log.Println("✅ Update processed successfully")
+		log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		w.WriteHeader(http.StatusOK)
+	}
 }
