@@ -39,6 +39,7 @@ func TestEndToEndNotification(t *testing.T) {
 	habitManager := habits.NewHabitManager(
 		testDataDir+"/habits.json",
 		testDataDir+"/responses.json",
+		testDataDir+"/daily_logs_test.json", // Added daily_logs_test.json argument
 	)
 
 	// Agregar algunos hábitos de prueba
@@ -92,8 +93,8 @@ func TestEndToEndNotification(t *testing.T) {
 	// Programar el recordatorio
 	err = sched.ScheduleDailyReminder(timeStr, func() {
 		t.Log("📨 Ejecutando callback de notificación...")
-		if err := telegramBot.SendDailyReminder(); err != nil {
-			t.Logf("Error sending reminder: %v", err)
+		if err := telegramBot.SendMorningGreeting(); err != nil {
+			t.Logf("Error sending morning greeting: %v", err)
 		} else {
 			callbackExecuted = true
 			t.Log("✅ Notificación enviada exitosamente!")
@@ -149,6 +150,7 @@ func TestEndToEndWithManualTrigger(t *testing.T) {
 	habitManager := habits.NewHabitManager(
 		testDataDir+"/habits.json",
 		testDataDir+"/responses.json",
+		testDataDir+"/daily_logs_test.json",
 	)
 
 	// Agregar hábitos de prueba
@@ -187,10 +189,10 @@ func TestEndToEndWithManualTrigger(t *testing.T) {
 
 	// Enviar la notificación inmediatamente
 	t.Log("📨 Enviando notificación manual...")
-	err = telegramBot.SendDailyReminder()
 
-	if err != nil {
-		t.Fatalf("Error al enviar notificación: %v", err)
+	// 4. Verificar envío de recordatorio (saludo matutino)
+	if err := telegramBot.SendMorningGreeting(); err != nil {
+		t.Fatalf("Error sending morning greeting: %v", err)
 	}
 
 	t.Log("✅ Notificación enviada exitosamente!")

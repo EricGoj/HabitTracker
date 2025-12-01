@@ -22,25 +22,37 @@ type HabitResponse struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type HabitManager struct {
-	habits          []Habit
-	responses       []HabitResponse
-	habitsFile      string
-	responsesFile   string
-	mu              sync.RWMutex
-	nextID          int
+type DailyLog struct {
+	Date      string `json:"date"`
+	HabitID   int    `json:"habit_id"`
+	Planned   bool   `json:"planned"`
+	Completed bool   `json:"completed"`
 }
 
-func NewHabitManager(habitsFile, responsesFile string) *HabitManager {
+type HabitManager struct {
+	habits        []Habit
+	responses     []HabitResponse
+	dailyLogs     []DailyLog
+	habitsFile    string
+	responsesFile string
+	dailyLogsFile string
+	mu            sync.RWMutex
+	nextID        int
+}
+
+func NewHabitManager(habitsFile, responsesFile, dailyLogsFile string) *HabitManager {
 	hm := &HabitManager{
 		habits:        []Habit{},
 		responses:     []HabitResponse{},
+		dailyLogs:     []DailyLog{},
 		habitsFile:    habitsFile,
 		responsesFile: responsesFile,
+		dailyLogsFile: dailyLogsFile,
 		nextID:        1,
 	}
 	hm.LoadHabits()
 	hm.LoadResponses()
+	hm.LoadDailyLogs()
 	return hm
 }
 
@@ -105,6 +117,102 @@ func (hm *HabitManager) RecordResponse(habitID int, completed bool) error {
 
 	hm.responses = append(hm.responses, response)
 	return hm.saveResponses()
+}
+
+// RecordPlan registra si un hábito fue planeado para hoy
+func (hm *HabitManager) RecordPlan(habitID int, planned bool) error {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+
+	now := time.Now()
+	date := now.Format("2006-01-02")
+
+	// Buscar si ya existe un log para hoy
+	for i, log := range hm.dailyLogs {
+		if log.Date == date && log.HabitID == habitID {
+			hm.dailyLogs[i].Planned = planned
+			return hm.saveDailyLogs()
+		}
+	}
+
+	// Si no existe, crear uno nuevo
+	newLog := DailyLog{
+		Date:      date,
+		HabitID:   habitID,
+		Planned:   planned,
+		Completed: false,
+	}
+
+	hm.dailyLogs = append(hm.dailyLogs, newLog)
+	return hm.saveDailyLogs()
+}
+
+// RecordCompletion registra si un hábito fue completado hoy
+func (hm *HabitManager) RecordCompletion(habitID int, completed bool) error {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+
+	now := time.Now()
+	date := now.Format("2006-01-02")
+
+	// Buscar si ya existe un log para hoy
+	for i, log := range hm.dailyLogs {
+		if log.Date == date && log.HabitID == habitID {
+			hm.dailyLogs[i].Completed = completed
+			return hm.saveDailyLogs()
+		}
+	}
+
+	// Si no existe, crear uno nuevo (asumiendo que no fue planeado explícitamente pero se hizo)
+	newLog := DailyLog{
+		Date:      date,
+		HabitID:   habitID,
+		Planned:   false, // O true? Por ahora false si no hubo plan previo
+		Completed: completed,
+	}
+
+	hm.dailyLogs = append(hm.dailyLogs, newLog)
+	return hm.saveDailyLogs()
+}
+
+// GetDailyPlans devuelve los logs del día especificado
+func (hm *HabitManager) GetDailyPlans(date string) []DailyLog {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	var logs []DailyLog
+	for _, log := range hm.dailyLogs {
+		if log.Date == date {
+			logs = append(logs, log)
+		}
+	}
+	return logs
+}
+
+// LoadDailyLogs carga los logs diarios desde el archivo
+func (hm *HabitManager) LoadDailyLogs() error {
+	data, err := os.ReadFile(hm.dailyLogsFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	if len(data) == 0 {
+		return nil
+	}
+
+	return json.Unmarshal(data, &hm.dailyLogs)
+}
+
+// saveDailyLogs guarda los logs diarios en el archivo
+func (hm *HabitManager) saveDailyLogs() error {
+	data, err := json.MarshalIndent(hm.dailyLogs, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(hm.dailyLogsFile, data, 0644)
 }
 
 // LoadHabits carga los hábitos desde el archivo

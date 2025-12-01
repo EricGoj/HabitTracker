@@ -29,7 +29,7 @@ if [ -z "$WEBHOOK_URL" ]; then
     echo "   The bot will run in POLLING mode instead"
     echo ""
 else
-    echo "🔗 Webhook URL: $WEBHOOK_URL"
+    echo "🔗 . URL: $WEBHOOK_URL"
     echo ""
 fi
 

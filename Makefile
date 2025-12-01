@@ -12,6 +12,7 @@ help: ## Mostrar esta ayuda
 	@echo "  make deps             - Instalar dependencias"
 	@echo "  make test             - Ejecutar tests unitarios"
 	@echo "  make test-integration - Ejecutar tests de integración (envía notificaciones reales)"
+	@echo "  make check-webhook    - Verificar estado del webhook"
 
 deps: ## Instalar dependencias
 	@echo "📦 Instalando dependencias..."
@@ -48,3 +49,7 @@ test-integration: ## Ejecutar tests de integración (envía notificaciones reale
 	@echo ""
 	go test -v -run TestEndToEnd
 	@echo "✅ Tests de integración completados"
+
+check-webhook: ## Verificar estado del webhook
+	@echo "📡 Verificando estado del webhook..."
+	go run ./cmd/check-webhook

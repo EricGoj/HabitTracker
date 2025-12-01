@@ -27,7 +27,7 @@ func main() {
 	}
 
 	// Inicializar el gestor de hábitos
-	habitManager := habits.NewHabitManager("data/habits.json", "data/responses.json")
+	habitManager := habits.NewHabitManager("data/habits.json", "data/responses.json", "data/daily_logs.json")
 	log.Println("Habit manager initialized")
 
 	// Inicializar el bot
@@ -42,13 +42,22 @@ func main() {
 		log.Fatalf("Error creating scheduler: %v", err)
 	}
 
-	// Programar recordatorio diario
-	if err := sched.ScheduleDailyReminder(config.AppConfig.NotificationTime, func() {
-		if err := telegramBot.SendDailyReminder(); err != nil {
-			log.Printf("Error sending daily reminder: %v", err)
+	// Programar saludo matutino (Planificación)
+	if err := sched.ScheduleDailyReminder(config.AppConfig.MorningTime, func() {
+		if err := telegramBot.SendMorningGreeting(); err != nil {
+			log.Printf("Error sending morning greeting: %v", err)
 		}
 	}); err != nil {
-		log.Fatalf("Error scheduling daily reminder: %v", err)
+		log.Fatalf("Error scheduling morning greeting: %v", err)
+	}
+
+	// Programar revisión nocturna (Verificación)
+	if err := sched.ScheduleDailyReminder(config.AppConfig.EveningTime, func() {
+		if err := telegramBot.SendEveningReview(); err != nil {
+			log.Printf("Error sending evening review: %v", err)
+		}
+	}); err != nil {
+		log.Fatalf("Error scheduling evening review: %v", err)
 	}
 
 	// Iniciar el scheduler
@@ -71,7 +80,8 @@ func main() {
 		log.Printf("✅ Habit Tracker Bot is running in WEBHOOK mode!")
 		log.Printf("📡 Listening on %s", addr)
 		log.Printf("🔗 Webhook URL: %s", config.AppConfig.WebhookURL)
-		log.Printf("📅 Daily reminders scheduled at %s (%s)", config.AppConfig.NotificationTime, config.AppConfig.Timezone)
+		log.Printf("📅 Morning greeting scheduled at %s (%s)", config.AppConfig.MorningTime, config.AppConfig.Timezone)
+		log.Printf("📅 Evening review scheduled at %s (%s)", config.AppConfig.EveningTime, config.AppConfig.Timezone)
 
 		// Iniciar servidor HTTP en una goroutine
 		go func() {
@@ -87,7 +97,8 @@ func main() {
 		go telegramBot.Start()
 
 		log.Println("✅ Habit Tracker Bot is running in POLLING mode!")
-		log.Printf("📅 Daily reminders scheduled at %s (%s)", config.AppConfig.NotificationTime, config.AppConfig.Timezone)
+		log.Printf("📅 Morning greeting scheduled at %s (%s)", config.AppConfig.MorningTime, config.AppConfig.Timezone)
+		log.Printf("📅 Evening review scheduled at %s (%s)", config.AppConfig.EveningTime, config.AppConfig.Timezone)
 	}
 
 	log.Println("Press Ctrl+C to stop")

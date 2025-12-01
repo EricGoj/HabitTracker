@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -83,7 +84,9 @@ func (b *Bot) handleMessage(message *tgbotapi.Message) {
 func (b *Bot) handleStart(message *tgbotapi.Message) {
 	text := "¡Bienvenido al Habit Tracker Bot! 🎯\n\n" +
 		"Este bot te ayudará a rastrear tus hábitos diarios.\n" +
-		"Recibirás notificaciones todos los días a las 9:00 AM para revisar tus hábitos.\n\n" +
+		"📅 *Rutina Diaria:*\n" +
+		"🌅 08:00 AM - Planificación del día\n" +
+		"🌙 09:00 PM - Revisión de progreso\n\n" +
 		"Usa /help para ver todos los comandos disponibles."
 
 	msg := tgbotapi.NewMessage(message.Chat.ID, text)
@@ -177,21 +180,32 @@ func (b *Bot) handleDeleteHabit(message *tgbotapi.Message) {
 
 // handleCallback maneja las respuestas de los botones inline
 func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
-	parts := strings.Split(callback.Data, "_")
-	if len(parts) != 2 {
+	data := callback.Data
+	parts := strings.Split(data, "_")
+
+	// Esperamos formato: type_action_id (ej: plan_yes_1, review_no_2)
+	// O legacy: action_id (ej: yes_1) -> lo tratamos como review por compatibilidad si es necesario, o lo ignoramos.
+
+	if len(parts) < 2 {
 		return
 	}
 
-	action := parts[0]
-	habitID, err := strconv.Atoi(parts[1])
+	var actionType, response string
+	var habitID int
+	var err error
+
+	if len(parts) == 3 {
+		actionType = parts[0] // plan o review
+		response = parts[1]   // yes o no
+		habitID, err = strconv.Atoi(parts[2])
+	} else if len(parts) == 2 {
+		// Legacy support (asumimos review)
+		actionType = "review"
+		response = parts[0]
+		habitID, err = strconv.Atoi(parts[1])
+	}
+
 	if err != nil {
-		return
-	}
-
-	completed := action == "yes"
-
-	if err := b.habitManager.RecordResponse(habitID, completed); err != nil {
-		log.Printf("Error recording response: %v", err)
 		return
 	}
 
@@ -205,29 +219,48 @@ func (b *Bot) handleCallback(callback *tgbotapi.CallbackQuery) {
 		}
 	}
 
-	emoji := "✅"
-	status := "completado"
-	if !completed {
-		emoji = "❌"
-		status = "no completado"
-	}
+	var responseText string
 
-	responseText := fmt.Sprintf("%s Hábito '%s' marcado como %s", emoji, habitName, status)
+	if actionType == "plan" {
+		planned := response == "yes"
+		if err := b.habitManager.RecordPlan(habitID, planned); err != nil {
+			log.Printf("Error recording plan: %v", err)
+			return
+		}
+
+		if planned {
+			responseText = fmt.Sprintf("👍 Planeado: '%s'", habitName)
+		} else {
+			responseText = fmt.Sprintf("⏭️ Saltado por hoy: '%s'", habitName)
+		}
+
+	} else if actionType == "review" {
+		completed := response == "yes"
+		if err := b.habitManager.RecordCompletion(habitID, completed); err != nil {
+			log.Printf("Error recording completion: %v", err)
+			return
+		}
+
+		if completed {
+			responseText = fmt.Sprintf("✅ Completado: '%s'", habitName)
+		} else {
+			responseText = fmt.Sprintf("❌ No completado: '%s'", habitName)
+		}
+	}
 
 	// Responder al callback
 	callbackConfig := tgbotapi.NewCallback(callback.ID, responseText)
 	b.api.Send(callbackConfig)
 
-	// Actualizar el mensaje
-	editText := fmt.Sprintf("Respuesta registrada: %s", responseText)
-	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, editText)
+	// Actualizar el mensaje original para quitar los botones y mostrar la elección
+	edit := tgbotapi.NewEditMessageText(callback.Message.Chat.ID, callback.Message.MessageID, responseText)
 	b.api.Send(edit)
 }
 
-// SendDailyReminder envía el recordatorio diario con los hábitos
-func (b *Bot) SendDailyReminder() error {
+// SendMorningGreeting envía el saludo matutino y pregunta qué hábitos se harán hoy
+func (b *Bot) SendMorningGreeting() error {
 	if b.userChatID == 0 {
-		log.Println("No user chat ID available yet, skipping reminder")
+		log.Println("No user chat ID available yet, skipping morning greeting")
 		return nil
 	}
 
@@ -239,28 +272,102 @@ func (b *Bot) SendDailyReminder() error {
 		return err
 	}
 
-	text := "🌅 *Buenos días!* Es hora de revisar tus hábitos de hoy:\n\n"
+	text := "🌅 *Buenos días!* Planifiquemos tu día.\n¿Qué hábitos harás hoy?"
 	msg := tgbotapi.NewMessage(b.userChatID, text)
 	msg.ParseMode = "Markdown"
 	b.api.Send(msg)
 
-	// Enviar un mensaje por cada hábito con botones
+	// Enviar un mensaje por cada hábito con botones de planificación
 	for _, habit := range habits {
-		habitText := fmt.Sprintf("*%s*\n¿Completaste este hábito?", habit.Name)
+		habitText := fmt.Sprintf("🎯 *%s*", habit.Name)
 		habitMsg := tgbotapi.NewMessage(b.userChatID, habitText)
 		habitMsg.ParseMode = "Markdown"
 
 		// Crear botones inline
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("✅ Sí", fmt.Sprintf("yes_%d", habit.ID)),
-				tgbotapi.NewInlineKeyboardButtonData("❌ No", fmt.Sprintf("no_%d", habit.ID)),
+				tgbotapi.NewInlineKeyboardButtonData("👍 Lo haré", fmt.Sprintf("plan_yes_%d", habit.ID)),
+				tgbotapi.NewInlineKeyboardButtonData("⏭️ Hoy no", fmt.Sprintf("plan_no_%d", habit.ID)),
 			),
 		)
 		habitMsg.ReplyMarkup = keyboard
 
 		if _, err := b.api.Send(habitMsg); err != nil {
-			log.Printf("Error sending habit reminder: %v", err)
+			log.Printf("Error sending habit planner: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// SendEveningReview envía la revisión nocturna de los hábitos planeados
+func (b *Bot) SendEveningReview() error {
+	if b.userChatID == 0 {
+		log.Println("No user chat ID available yet, skipping evening review")
+		return nil
+	}
+
+	// Obtener planes de hoy
+	now := time.Now()
+	date := now.Format("2006-01-02")
+	dailyPlans := b.habitManager.GetDailyPlans(date)
+	allHabits := b.habitManager.GetHabits()
+
+	// Mapa para acceso rápido a hábitos
+	habitMap := make(map[int]string)
+	for _, h := range allHabits {
+		habitMap[h.ID] = h.Name
+	}
+
+	// Filtrar hábitos que se planearon hacer (o todos si no hubo planificación explícita, decisión de diseño)
+	// Por ahora, solo preguntamos por los que dijeron "SI" o los que no respondieron (asumimos que quizás lo hicieron)
+	// O simplificamos: preguntamos por TODOS los hábitos activos, pero personalizamos el mensaje si dijeron que NO.
+	// Vamos a preguntar por los que dijeron SI o no respondieron.
+
+	var habitsToReview []int
+	plannedMap := make(map[int]bool)
+
+	for _, plan := range dailyPlans {
+		plannedMap[plan.HabitID] = plan.Planned
+	}
+
+	for _, h := range allHabits {
+		planned, responded := plannedMap[h.ID]
+		// Si dijo que SI (planned=true) O no respondió (!responded), preguntamos.
+		// Si dijo que NO (planned=false), no preguntamos (respetamos su decisión matutina).
+		if !responded || planned {
+			habitsToReview = append(habitsToReview, h.ID)
+		}
+	}
+
+	if len(habitsToReview) == 0 {
+		msg := tgbotapi.NewMessage(b.userChatID, "🌙 *Buenas noches!* Hoy no planificaste ningún hábito. ¡Mañana será otro día!")
+		msg.ParseMode = "Markdown"
+		b.api.Send(msg)
+		return nil
+	}
+
+	text := "🌙 *Buenas noches!* Es hora de revisar tu progreso de hoy."
+	msg := tgbotapi.NewMessage(b.userChatID, text)
+	msg.ParseMode = "Markdown"
+	b.api.Send(msg)
+
+	for _, habitID := range habitsToReview {
+		name := habitMap[habitID]
+		habitText := fmt.Sprintf("❓ *%s*\n¿Lo completaste?", name)
+		habitMsg := tgbotapi.NewMessage(b.userChatID, habitText)
+		habitMsg.ParseMode = "Markdown"
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("✅ Sí", fmt.Sprintf("review_yes_%d", habitID)),
+				tgbotapi.NewInlineKeyboardButtonData("❌ No", fmt.Sprintf("review_no_%d", habitID)),
+			),
+		)
+		habitMsg.ReplyMarkup = keyboard
+
+		if _, err := b.api.Send(habitMsg); err != nil {
+			log.Printf("Error sending habit review: %v", err)
 		}
 	}
 

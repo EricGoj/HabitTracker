@@ -10,7 +10,9 @@ import (
 type Config struct {
 	TelegramBotToken string
 	TelegramChatID   string
-	NotificationTime string
+	NotificationTime string // Deprecated: Use MorningTime and EveningTime
+	MorningTime      string
+	EveningTime      string
 	Timezone         string
 	WebhookURL       string
 	Port             string
@@ -29,6 +31,8 @@ func LoadConfig() error {
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 		NotificationTime: os.Getenv("NOTIFICATION_TIME"),
+		MorningTime:      os.Getenv("MORNING_TIME"),
+		EveningTime:      os.Getenv("EVENING_TIME"),
 		Timezone:         os.Getenv("TIMEZONE"),
 		WebhookURL:       os.Getenv("WEBHOOK_URL"),
 		Port:             os.Getenv("PORT"),
@@ -45,6 +49,14 @@ func LoadConfig() error {
 
 	if AppConfig.Timezone == "" {
 		AppConfig.Timezone = "America/Argentina/Buenos_Aires"
+	}
+
+	if AppConfig.MorningTime == "" {
+		AppConfig.MorningTime = "08:00"
+	}
+
+	if AppConfig.EveningTime == "" {
+		AppConfig.EveningTime = "21:00"
 	}
 
 	if AppConfig.Port == "" {
